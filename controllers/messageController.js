@@ -2,6 +2,7 @@ const Message = require('../models/messageModel');
 const User = require('../models/userModel');
 const { translateText } = require('../services/translateService');
 const axios = require('axios');
+const mongoose = require("mongoose");
 const { transcribeAudio } = require('../services/speachService');
 
 exports.sendMessage = async (req, res, next) => {
@@ -183,3 +184,85 @@ exports.handleMediaMessage = async (req, res) => {
     res.status(500).json({ error: "Failed to process media" });
   }
 };
+
+
+exports.getConversation= async(req,res)=>{
+  try{
+    const {receiver}=req.query;
+    const sender = req.user.id;
+    console.log({sender,receiver});
+    if(!sender || !receiver){
+      return res.status(400).json({error:"senderId and receiverId are required"});
+    }
+
+    const messages= await Message.find({
+      $or:[
+        {sender:sender,receiver:receiver},
+        {sender:receiver,receiver:sender}
+      ]
+    }).sort({createdAt:1}).populate("sender receiver", "name email profilePicture");
+
+    return res.status(200).json({
+      success: true,
+      totalMessages: messages.length,
+      messages,
+    });
+
+  }catch(err){
+    console.error(err);
+    res.status(500).json({error:"Internal Server Error"});
+  }
+}
+
+exports.getPaginatedMessages=async(req,res,)=>{
+  console.log("Fetching paginated messages...");
+  try{
+      const {receiver,page=1,limit=20}=req.query;
+      const sender = req.user.id;
+      console.log({sender,receiver,page,limit});
+
+      if(!sender || !receiver){
+          return res.status(400).json({error:"sender and receiver are required"});
+      }
+      
+       
+      const senderId = new mongoose.Types.ObjectId(sender);
+      const receiverId = new mongoose.Types.ObjectId(receiver);
+
+
+
+        const skip = (page - 1) * limit;
+
+    // Fetch paginated messages
+    const messages = await Message.find({
+      $or: [
+        { sender: senderId, receiver: receiverId },
+        { sender: receiverId, receiver: senderId },
+      ],
+    })
+      .sort({ createdAt: -1 }) // Latest first
+      .skip(skip)
+      .limit(Number(limit));
+    
+
+       const totalMessages = await Message.countDocuments({
+      $or: [
+        { sender: senderId, receiver: receiverId },
+        { sender: receiverId, receiver: senderId },
+      ],
+    });
+
+    return res.status(200).json({
+      success: true,
+      currentPage: Number(page),
+      totalPages: Math.ceil(totalMessages / limit),
+      totalMessages,
+      messages,
+    });
+   
+
+
+  }catch(err){
+    console.error(err);
+    res.status(500).json({error:"Internal Server Error"});
+  }}
